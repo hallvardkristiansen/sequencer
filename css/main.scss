@@ -1,0 +1,32 @@
+body {
+  background-color: #F6F2EB;
+  font-family: 'Arial', sans-serif;
+  font-size: 20px;
+  color: #013564;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#controls {
+  #mode, #steps, #swing, #dur {
+    fill: grey;
+    cursor: pointer;
+  }
+}
+
+#keypad {
+  path {
+    fill: rgb(234, 234, 234);
+    stroke: #0C313F;
+    stroke-width: 1px;
+    stroke-miterlimit: 10;
+  }
+  #a1 path, #b1 path, #c1 path, #d1 path {
+    fill: rgb(234, 234, 255);
+  }
+  g {
+    cursor: pointer;
+  }
+}
