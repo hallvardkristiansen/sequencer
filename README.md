@@ -1,0 +1,2 @@
+# sequencer
+Digital sequencer prototype
