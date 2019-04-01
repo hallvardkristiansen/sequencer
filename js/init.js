@@ -1,25 +1,48 @@
-var main_loop, palette;
+var main_loop;
 var playing = false;
 var last_clock = Date.now();
-var refreshrate = 100;
-var clockrate = 300;
+var refreshrate = 10;
+var clockrate = 1234;
 var semitones = 60;
 var firesync = false;
-var mode_down = false;
-var steps_down = false;
-var swing_down = false;
-var dur_down = false;
-var keypad_down = false;
-var dragging = false;
+var interacting = false;
 var dragstart = 0;
 var dragstop = 0;
 var incrementor = 1;
-var swing_amount = 0;
-var dur_amount = 1;
+
+var buttons = {
+  'keypad': {
+    'down': false
+  },
+  'mode': {
+    'down': false,
+    'amount': 0
+  },
+  'steps': {
+    'down': false,
+    'amount': 0
+  },
+  'swing': {
+    'down': false,
+    'amount': 50
+  },
+  'dur': {
+    'down': false,
+    'amount': 100
+  }
+}
 
 let modes = ['1sequencer', '2sequencer', '4sequencer'];
 var mode = 0;
 var logic = 'none';
+var palette = {
+  'rainbow': [],
+  'semitones': [],
+  'swing': [],
+  'glide': [],
+  'duration': [],
+  'patterns': []
+};
 
 var grid = {
   'rows': ['a', 'b', 'c', 'd'],
@@ -33,6 +56,7 @@ var pointer = 0;
 var current_page = 0;
 var current_row = 0;
 var current_column = 0;
+var reDraw = true;
 
 var indicator_color = 'rgb(255, 255, 255)';
 var trigger_color = 'rgb(0, 255, 255)';
@@ -41,22 +65,22 @@ var active_color = 'rgb(240, 240, 255)';
 
 
 var pattern = [
-  [1, 55, 0, 0], [0, 23, 0, 0], [0, 43, 0, 0], [0, 45, 0, 0], 
-  [0, 43, 0, 0], [0, 21, 0, 0], [1, 23, 0, 0], [0, 43, 0, 0], 
-  [0, 60, 0, 0], [1, 32, 0, 0], [0, 33, 0, 0], [1, 44, 0, 0], 
-  [0, 11, 0, 0], [0, 22, 0, 0], [1, 33, 0, 0], [1, 50, 0, 0],
-  [1, 43, 0, 0], [0, 12, 0, 0], [1, 54, 0, 0], [0, 23, 0, 0], 
-  [0, 54, 0, 0], [1, 21, 0, 0], [0, 23, 0, 0], [1, 12, 0, 0], 
-  [1, 60, 0, 0], [1, 32, 0, 0], [1, 33, 0, 0], [1, 44, 0, 0], 
-  [0, 11, 0, 0], [0, 22, 0, 0], [1, 33, 0, 0], [1, 50, 0, 0],
-  [1, 45, 0, 0], [0, 23, 0, 0], [0, 43, 0, 0], [0, 45, 0, 0], 
-  [0, 43, 0, 0], [1, 32, 0, 0], [1, 23, 0, 0], [0, 43, 0, 0], 
-  [1, 60, 0, 0], [0, 32, 0, 0], [0, 33, 0, 0], [1, 44, 0, 0], 
-  [0, 11, 0, 0], [0, 22, 0, 0], [0, 33, 0, 0], [1, 50, 0, 0],
-  [1, 60, 0, 0], [0, 23, 0, 0], [1, 43, 0, 0], [0, 45, 0, 0], 
-  [0, 43, 0, 0], [1, 21, 0, 0], [1, 23, 0, 0], [0, 43, 0, 0], 
-  [0, 60, 0, 0], [1, 32, 0, 0], [0, 33, 0, 0], [1, 44, 0, 0], 
-  [1, 11, 0, 0], [0, 22, 0, 0], [1, 33, 0, 0], [1, 50, 0, 0]
+  [1, 55], [0, 23], [0, 43], [0, 45], 
+  [0, 43], [0, 21], [1, 23], [0, 43], 
+  [0, 60], [1, 32], [0, 33], [1, 44], 
+  [0, 11], [0, 22], [1, 33], [1, 50],
+  [1, 43], [0, 12], [1, 54], [0, 23], 
+  [0, 54], [1, 21], [0, 23], [1, 12], 
+  [1, 60], [1, 32], [1, 33], [1, 44], 
+  [0, 11], [0, 22], [1, 33], [1, 50],
+  [1, 45], [0, 23], [0, 43], [0, 45], 
+  [0, 43], [1, 32], [1, 23], [0, 43], 
+  [1, 60], [0, 32], [0, 33], [1, 44], 
+  [0, 11], [0, 22], [0, 33], [1, 50],
+  [1, 60], [0, 23], [1, 43], [0, 45], 
+  [0, 43], [1, 21], [1, 23], [0, 43], 
+  [0, 60], [1, 32], [0, 33], [1, 44], 
+  [1, 11], [0, 22], [1, 33], [1, 50]
 ];
 var current_state = pattern.slice(pointer, pagesize);
 
@@ -168,117 +192,142 @@ function getIndex(row, column) {
   return (row * grid.columns.length) + column;
 }
 
+function onEncoderRotate(position) {
+  interacting = true;
+  var yoffset = position - dragstart;
+  var incrementamount = yoffset > 0 ? 1 : -1;
+  if (yoffset > 5 || yoffset < -5) {
+    dragstart = position;
+    return incrementamount;
+  }
+  return 0;
+}
+
+function resetState() {
+  buttons.keypad.down = false;
+  buttons.steps.down = false;
+  buttons.mode.down = false;
+  buttons.swing.down = false;
+  buttons.dur.down = false;
+  interacting = false;
+}
+
+function generatePalettes() {
+  palette.rainbow = cmap_rainbow(320, 320);
+  palette.semitones = palette.rainbow.slice(0, semitones);
+  palette.swing = palette.rainbow.slice(semitones * 2, semitones * 3); // good
+  palette.glide = palette.rainbow.slice(semitones * 3, semitones * 4); // adjust
+  palette.duration = palette.rainbow.slice(semitones * 4, semitones * 5); // good
+  palette.patterns.fill('rgb(100, 200, 255)', 0, 60);
+}
+
+function activateOutput(selector, level) {
+  $(selector).css('fill', level);
+}
+
 function draw() {
   $.each(grid.rows, function(y, row) {
     $.each(grid.columns, function(x, column) {
       var index = getIndex(y, x);
-      var colorvalue = indicator.includes('#'+row+column) ? (current_state[index][0] ? trigger_color : indicator_color) : (current_state[index][0] ? palette[current_state[index][1] - 1] : inactive_color);
-      $('#'+row+column).find('path').css('fill', colorvalue);
+      var colorvalue = indicator.includes('#'+row+column) ? (current_state[index][0] ? trigger_color : indicator_color) : (current_state[index][0] ? palette.semitones[current_state[index][1] - 1] : inactive_color);
+      activateOutput('#'+row+column+' path', colorvalue);
     });
     var outindex = getIndex(y, current_column);
-    var outputcolorvalue = indicator.includes('#'+row+grid.columns[current_column]) && current_state[outindex][0] ? palette[current_state[outindex][1] - 1] : inactive_color;
-    $('#'+row+' path').css('fill', outputcolorvalue);
+    var outputcolorvalue = indicator.includes('#'+row+grid.columns[current_column]) && current_state[outindex][0] ? palette.semitones[current_state[outindex][1] - 1] : inactive_color;
+    activateOutput('#'+row+' path', outputcolorvalue);
   });
-  $('#abcd path').css('fill', (current_state[pointer][0] ? palette[current_state[pointer][1] - 1] : inactive_color));
-  $('#sync path').css('fill', (firesync ? active_color : inactive_color));
+  activateOutput('#abcd path', (current_state[pointer][0] ? palette.semitones[current_state[pointer][1] - 1] : inactive_color));
+  activateOutput('#sync path', (firesync ? active_color : inactive_color));
+  reDraw = false;
 }
 
 
 function runtime() {
   if (Date.now() - last_clock > clockrate && playing) {
     increment(incrementor);
+    reDraw = true;
   }
-  draw();
+  if (reDraw) {
+    draw();
+  }
 }
 
 $(function() {
-  palette = cmap_rainbow(semitones, 320);
+  generatePalettes();
   main_loop = setInterval(runtime, refreshrate);
   $.each(grid.rows, function(y, row) {
     $.each(grid.columns, function(x, column) {
       $('#'+row+column).find('path').mousedown(function(e) {
         keypad_index = (current_page * pagesize) + getIndex(y, x);
-        keypad_down = true;
+        buttons.keypad.down = true;
         dragstart = e.pageY;
       });
     });
   });
   $('#steps').mousedown(function(e) {
-    steps_down = true;
+    buttons.steps.down = true;
     dragstart = e.pageY;
   });
   $('#steps').mouseup(function(e) {
-    if (!dragging) {
+    if (!interacting) {
       playing = !playing;
     }
   });
   $('#mode').mousedown(function(e) {
-    mode_down = true;
+    buttons.mode.down = true;
     dragstart = e.pageY;
   });
   $('#mode').mouseup(function(e) {
-    if (!dragging) {
+    if (!interacting) {
       mode = mode+1 == modes.length ? 0 : mode+1;
+      if (!playing) {
+        increment(0);
+        reDraw = true;
+      }
     }
   });
   $('#swing').mousedown(function(e) {
-    swing_down = true;
+    buttons.swing.down = true;
     dragstart = e.pageY;
   });
   $('#dur').mousedown(function(e) {
-    dur_down = true;
+    buttons.dur.down = true;
     dragstart = e.pageY;
   });
   $(window).mousemove(function(e) {
-    if (steps_down) {
-      dragging = true;
-      var yoffset = (e.pageY - dragstart);
-      var incrementamount = yoffset > 0 ? 1 : -1;
+    if (buttons.keypad.down) {
+      pattern[keypad_index][0] = 1;
+      var incrementamount = onEncoderRotate(e.pageY);
+      if (incrementamount) {
+        var semitone = pattern[keypad_index][1] - incrementamount;
+        pattern[keypad_index][1] = semitone > 0 ? (semitone < 60 ? semitone : 60) : 0;
+        reDraw = true;
+      }
+    }
+    if (buttons.steps.down) {
+      var incrementamount = onEncoderRotate(e.pageY);
       if (playing) {
         incrementor = incrementamount;
       } else {
-        if (yoffset > 5 || yoffset < -5) {
-          increment(incrementamount);
-          dragstart = e.pageY;
-        }
+        increment(incrementamount);
+        reDraw = true;
       }
     }
-    if (mode_down) {
-      dragging = true;
-      var yoffset = (e.pageY - dragstart);
-      var incrementamount = yoffset > 0 ? 1 : -1;
-      if (yoffset > 5 || yoffset < -5) {
-        // add action here
-        dragstart = e.pageY;
-      }
+    if (buttons.mode.down) {
+      buttons.mode.amount += onEncoderRotate(e.pageY);
     }
-    if (keypad_down) {
-      dragging = true;
-      pattern[keypad_index][0] = 1;
-      var yoffset = (e.pageY - dragstart);
-      var incrementamount = yoffset > 0 ? 1 : -1;
-      if (yoffset > 5 || yoffset < -5) {
-        var semitone = pattern[keypad_index][1] + incrementamount;
-        pattern[keypad_index][1] = semitone > 0 ? (semitone < 60 ? semitone : 60) : 0;
-        dragstart = e.pageY;
-      }
+    if (buttons.swing.down) {
+      buttons.swing.amount += onEncoderRotate(e.pageY);
     }
-    if (swing_down) {
-      // add swing modifier
-    }
-    if (dur_down) {
-      // add duration modifier
+    if (buttons.dur.down) {
+      buttons.dur.amount += onEncoderRotate(e.pageY);
     }
   });
   $(window).mouseup(function(e) {
-    if (keypad_down && !dragging) {
+    if (buttons.keypad.down && !interacting) {
       pattern[keypad_index][0] = !pattern[keypad_index][0];
     }
-    keypad_down = false;
-    steps_down = false;
-    mode_down = false;
-    swing_down = false;
-    dur_down = false;
-    dragging = false;
+    resetState();
+    reDraw = true;
   });
 });
